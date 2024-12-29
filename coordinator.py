@@ -27,6 +27,9 @@ class KeempleDataUpdateCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self):
         """Update data via library."""
         try:
-            return await self.api.async_update_data()
+            data = await self.api.async_update_data()
+            _LOGGER.debug("Coordinator update successful")  # Add debug logging
+            return data
         except Exception as error:
+            _LOGGER.error("Error communicating with API: %s", error)
             raise UpdateFailed(f"Error communicating with API: {error}")

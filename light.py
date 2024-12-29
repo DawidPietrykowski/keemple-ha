@@ -40,21 +40,25 @@ class KeempleLight(LightEntity):
         self._attr_name = device.display_name
         self._attr_device_info = device.device_info
 
-    @property
-    def is_on(self) -> bool:
-        """Return true if light is on."""
-        return self.device.status == 1
+    should_poll = False
 
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self.coordinator.last_update_success
+        return self.coordinator.last_update_success and self.device is not None
 
+    @property
+    def is_on(self) -> bool:
+        """Return true if light is on."""
+        status = self.device.channel_status()
+        _LOGGER.debug("%s status: %s", self.name, status)
+        return status == 255
+    
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the light on."""
         success = await self.coordinator.api.turn_on(self.device)
         if success:
-            self.device.status = 1
+            self.device.set_channel_status(255)
             self.async_write_ha_state()
             await self.coordinator.async_request_refresh()
         else:
@@ -64,15 +68,11 @@ class KeempleLight(LightEntity):
         """Turn the light off."""
         success = await self.coordinator.api.turn_off(self.device)
         if success:
-            self.device.status = 0
+            self.device.set_channel_status(0)
             self.async_write_ha_state()
             await self.coordinator.async_request_refresh()
         else:
             _LOGGER.error("Failed to turn off %s", self.name)
-
-    async def async_update(self) -> None:
-        """Update the entity."""
-        await self.coordinator.async_request_refresh()
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to updates."""

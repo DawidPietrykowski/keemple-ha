@@ -67,6 +67,83 @@ class Device:
             "model": f"Type {self.device_type}",
             "sw_version": None,
         }
+    
+    def channel_status(self):
+        """Get status for specific channel or first status for single devices."""
+        if self.channel is not None:
+            if self.statuses and len(self.statuses) >= self.channel:
+                status = self.statuses[self.channel - 1]
+                _LOGGER.debug(
+                    "Device %s channel %s status: %s (from statuses: %s)",
+                    self.name,
+                    self.channel,
+                    status,
+                    self.statuses
+                )
+                return status
+            _LOGGER.warning(
+                "Device %s channel %s has invalid status array: %s",
+                self.name,
+                self.channel,
+                self.statuses
+            )
+            return 0
+        return self.statuses[0] if self.statuses else 0
+
+    def set_channel_status(self, val):
+        """Set status for specific channel or first status for single devices."""
+        if self.channel is not None:
+            if not self.statuses:
+                self.statuses = [0] * max(DUAL_CHANNELS)
+            while len(self.statuses) < self.channel:
+                self.statuses.append(0)
+            self.statuses[self.channel - 1] = val
+            _LOGGER.debug(
+                "Set device %s channel %s to %s (statuses: %s)",
+                self.name,
+                self.channel,
+                val,
+                self.statuses
+            )
+        else:
+            if not self.statuses:
+                self.statuses = [0]
+            self.statuses[0] = val
+
+    @property
+    def internal_id(self) -> str:
+        """Return internal ID for device tracking."""
+        if self.channel is not None:
+            return f"{self.nuid}_{self.channel}"
+        return str(self.nuid)
+
+    def update_from_status(self, new_status: dict) -> None:
+        """Update device state from new status data."""
+        self.status = new_status.get('status', self.status)
+        new_statuses = new_status.get('statuses')
+        
+        _LOGGER.debug(
+            "Updating device %s (channel: %s) with new statuses: %s",
+            self.name,
+            self.channel,
+            new_statuses
+        )
+        
+        if isinstance(new_statuses, str):
+            try:
+                self.statuses = [float(x) for x in new_statuses.strip('[]').split(',')]
+            except (ValueError, AttributeError):
+                _LOGGER.warning("Failed to parse statuses string: %s", new_statuses)
+                return
+        elif isinstance(new_statuses, list):
+            self.statuses = new_statuses
+        
+        _LOGGER.debug(
+            "Device %s (channel: %s) updated statuses: %s",
+            self.name,
+            self.channel,
+            self.statuses
+        )
 
 class KeempleHome:
     """Keemple API client."""
@@ -113,7 +190,10 @@ class KeempleHome:
 
     async def async_update_data(self) -> Dict[str, Any]:
         """Update device data from API."""
+        _LOGGER.debug("Starting data update cycle")
+
         if not self._authenticated:
+            _LOGGER.debug("Not authenticated, performing login")
             await self.async_login()
 
         params = {
@@ -121,6 +201,7 @@ class KeempleHome:
         }
         
         try:
+            _LOGGER.debug("Making API request to querychangeddata2")
             data = await self._async_request(
                 "post",
                 f"{BASE_URL}/data/querychangeddata2",
@@ -128,11 +209,25 @@ class KeempleHome:
             )
             
             if data:
+                _LOGGER.debug("Received data from API: %s", data)
+                old_states = {d.nuid: (d.status, d.statuses) for d in self.devices}
                 self._parse_devices(data)
+                
+                # Log state changes
+                for device in self.devices:
+                    if device.nuid in old_states:
+                        old_status, old_statuses = old_states[device.nuid]
+                        if old_status != device.status or old_statuses != device.statuses:
+                            _LOGGER.debug("Device %s state changed: %s -> %s, %s -> %s",
+                                        device.name,
+                                        old_status, device.status,
+                                        old_statuses, device.statuses)
+                
                 self._organize_rooms()
                 self._find_unassigned_devices()
                 return data
-            
+
+            _LOGGER.debug("No data received from API")
             return {}
             
         except Exception as err:
@@ -167,7 +262,7 @@ class KeempleHome:
         try:
             response = await self._async_request("post", url, params=params)
             if response.get("resultCode") == 0:
-                device.status = 1 if operation == "open" else 0
+                # device.status = 1 if operation == "open" else 0
                 return True
             
             _LOGGER.error(
@@ -305,58 +400,69 @@ class KeempleHome:
 
     def _parse_devices(self, data: Dict[str, Any]) -> None:
         """Parse devices from API response."""
-        self.devices.clear()
-        
-        for device in data.get('appliancestatus', []):
+        existing_devices = {device.internal_id: device for device in self.devices}
+        new_devices = []
+
+        for device_status in data.get('appliancestatus', []):
+            nuid = device_status.get('nuid')
+            
+            # Find device name
             device_name = "Unknown"
             for remote in data.get('remote', []):
                 for appliance in remote.get('appliancelist', []):
-                    if appliance.get('nuid') == device.get('nuid'):
+                    if appliance.get('nuid') == nuid:
                         device_name = appliance.get('name', "Unknown")
                         break
 
-            device_type = device.get('devicetype', '')
+            device_type = device_status.get('devicetype', '')
 
-            status = device.get('status', 0)
-            if device_type == DEVICE_TYPE_BLIND:
-                status = max(BLIND_MIN_POSITION, min(BLIND_MAX_POSITION, status))   
-            
-            statuses = device.get('statuses')
-            if isinstance(statuses, str):
-                try:
-                    statuses = [float(x) for x in statuses.strip('[]').split(',')]
-                except (ValueError, AttributeError):
-                    statuses = []
-
-            # For dual devices (type 42), create two devices
             if device_type == DEVICE_TYPE_LIGHT_DUAL:
+                _LOGGER.debug("Processing dual light device: %s", device_name)
                 for channel in DUAL_CHANNELS:
-                    self.devices.append(Device(
-                        name=device_name,
-                        device_id=device.get('deviceid', ''),
-                        device_type=device_type,
-                        status=status,
-                        nuid=device.get('nuid', 0),
-                        battery=device.get('battery', 0),
-                        last_active_time=device.get('lastactivetime', ''),
-                        zwavedeviceid=device.get('zwavedeviceid', 0),
-                        statuses=statuses,
-                        channel=channel
-                    ))
+                    device_key = f"{nuid}_{channel}"
+                    if device_key in existing_devices:
+                        # Update existing device
+                        _LOGGER.debug("Updating existing dual light channel %d: %s", 
+                                    channel, device_status)
+                        existing_devices[device_key].update_from_status(device_status)
+                        new_devices.append(existing_devices[device_key])
+                    else:
+                        # Create new device
+                        _LOGGER.debug("Creating new dual light channel %d", channel)
+                        new_device = Device(
+                            name=device_name,
+                            device_id=device_status.get('deviceid', ''),
+                            device_type=device_type,
+                            status=device_status.get('status', 0),
+                            nuid=nuid,
+                            battery=device_status.get('battery', 0),
+                            last_active_time=device_status.get('lastactivetime', ''),
+                            zwavedeviceid=device_status.get('zwavedeviceid', 0),
+                            statuses=device_status.get('statuses', []),
+                            channel=channel
+                        )
+                        new_devices.append(new_device)
             else:
-                # Single devices
-                self.devices.append(Device(
-                    name=device_name,
-                    device_id=device.get('deviceid', ''),
-                    device_type=device_type,
-                    status=status,
-                    nuid=device.get('nuid', 0),
-                    battery=device.get('battery', 0),
-                    last_active_time=device.get('lastactivetime', ''),
-                    zwavedeviceid=device.get('zwavedeviceid', 0),
-                    statuses=statuses
-                ))
+                device_key = str(nuid)
+                if device_key in existing_devices:
+                    existing_devices[device_key].update_from_status(device_status)
+                    new_devices.append(existing_devices[device_key])
+                else:
+                    new_devices.append(Device(
+                        name=device_name,
+                        device_id=device_status.get('deviceid', ''),
+                        device_type=device_type,
+                        status=device_status.get('status', 0),
+                        nuid=nuid,
+                        battery=device_status.get('battery', 0),
+                        last_active_time=device_status.get('lastactivetime', ''),
+                        zwavedeviceid=device_status.get('zwavedeviceid', 0),
+                        statuses=device_status.get('statuses', [])
+                    ))
 
+        self.devices = new_devices
+        _LOGGER.debug("Updated devices: %s", 
+                     [(d.name, d.channel, d.status, d.statuses) for d in self.devices])
     def _organize_rooms(self) -> None:
         """Organize devices by room."""
         self.rooms.clear()
