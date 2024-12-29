@@ -15,7 +15,10 @@ from .const import (
     DUAL_CHANNELS,
     BLIND_MIN_POSITION,
     BLIND_MAX_POSITION,
-    DEVICE_TYPE_BLIND
+    DEVICE_TYPE_BLIND,
+    TEMP_TARGET_IDX,
+    TEMP_CURRENT_IDX,
+    POWER_STATE_IDX
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,9 +34,15 @@ class Device:
     battery: int
     last_active_time: str
     zwavedeviceid: int
-    statuses: Optional[str] = None
+    statuses: Optional[list] = None
     channel: Optional[int] = None  # Add channel support
-    
+    def __post_init__(self):
+        """Convert statuses string to list if needed."""
+        if isinstance(self.statuses, str):
+            try:
+                self.statuses = [float(x) for x in self.statuses.strip('[]').split(',')]
+            except (ValueError, AttributeError):
+                self.statuses = []
     @property
     def unique_id(self) -> str:
         """Return unique ID for Home Assistant."""
@@ -211,6 +220,77 @@ class KeempleHome:
             _LOGGER.error("Error operating blind %s: %s", device.name, str(err))
             return False
 
+    async def set_heater_temperature(self, device: Device, temperature: float) -> bool:
+        """Set heater target temperature."""
+        if not self._authenticated:
+            await self.async_login()
+
+        url = f"{BASE_URL}/device/operate"
+        
+        command = {
+            "mode": 1,
+            "temperature": temperature
+        }
+
+        params = {
+            "platform": DEFAULT_PLATFORM,
+            "zwavedeviceid": str(device.zwavedeviceid),
+            "command": json.dumps(command)
+        }
+        
+        try:
+            response = await self._async_request("post", url, params=params)
+            if response.get("resultCode") == 0:
+                if isinstance(device.statuses, list) and len(device.statuses) > TEMP_TARGET_IDX:
+                    device.statuses[TEMP_TARGET_IDX] = float(temperature)
+                return True
+            
+            _LOGGER.error(
+                "Failed to set temperature for heater %s: %s", 
+                device.name, 
+                response.get("resultMessage", "Unknown error")
+            )
+            return False
+            
+        except Exception as err:
+            _LOGGER.error("Error setting temperature for heater %s: %s", device.name, str(err))
+            return False
+
+    async def set_heater_power(self, device: Device, power: int) -> bool:
+        """Set heater power state."""
+        if not self._authenticated:
+            await self.async_login()
+
+        url = f"{BASE_URL}/device/operate"
+        
+        command = {
+            "power": power
+        }
+
+        params = {
+            "platform": DEFAULT_PLATFORM,
+            "zwavedeviceid": str(device.zwavedeviceid),
+            "command": json.dumps(command)
+        }
+        
+        try:
+            response = await self._async_request("post", url, params=params)
+            if response.get("resultCode") == 0:
+                if isinstance(device.statuses, list) and len(device.statuses) > POWER_STATE_IDX:
+                    device.statuses[POWER_STATE_IDX] = 1.0 if power else 0.0
+                return True
+            
+            _LOGGER.error(
+                "Failed to set power for heater %s: %s", 
+                device.name, 
+                response.get("resultMessage", "Unknown error")
+            )
+            return False
+            
+        except Exception as err:
+            _LOGGER.error("Error setting power for heater %s: %s", device.name, str(err))
+            return False
+
     async def _async_request(self, method: str, url: str, **kwargs) -> Dict[str, Any]:
         """Make an async request to the API."""
         try:
@@ -241,6 +321,13 @@ class KeempleHome:
             if device_type == DEVICE_TYPE_BLIND:
                 status = max(BLIND_MIN_POSITION, min(BLIND_MAX_POSITION, status))   
             
+            statuses = device.get('statuses')
+            if isinstance(statuses, str):
+                try:
+                    statuses = [float(x) for x in statuses.strip('[]').split(',')]
+                except (ValueError, AttributeError):
+                    statuses = []
+
             # For dual devices (type 42), create two devices
             if device_type == DEVICE_TYPE_LIGHT_DUAL:
                 for channel in DUAL_CHANNELS:
@@ -253,7 +340,7 @@ class KeempleHome:
                         battery=device.get('battery', 0),
                         last_active_time=device.get('lastactivetime', ''),
                         zwavedeviceid=device.get('zwavedeviceid', 0),
-                        statuses=device.get('statuses'),
+                        statuses=statuses,
                         channel=channel
                     ))
             else:
@@ -267,7 +354,7 @@ class KeempleHome:
                     battery=device.get('battery', 0),
                     last_active_time=device.get('lastactivetime', ''),
                     zwavedeviceid=device.get('zwavedeviceid', 0),
-                    statuses=device.get('statuses')
+                    statuses=statuses
                 ))
 
     def _organize_rooms(self) -> None:
