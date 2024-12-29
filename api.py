@@ -12,7 +12,10 @@ from .const import (
     BASE_URL,
     DEFAULT_PLATFORM,
     DEVICE_TYPE_LIGHT_DUAL,
-    DUAL_CHANNELS
+    DUAL_CHANNELS,
+    BLIND_MIN_POSITION,
+    BLIND_MAX_POSITION,
+    DEVICE_TYPE_BLIND
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -169,6 +172,45 @@ class KeempleHome:
             _LOGGER.error("Error operating device %s: %s", device.display_name, str(err))
             return False
 
+    async def operate_blind(self, device: Device, operation: str, value: Optional[int] = None) -> bool:
+        """Operate a blind (open/close/stop with optional position)."""
+        if not self._authenticated:
+            await self.async_login()
+
+        url = f"{BASE_URL}/device/operate"
+        
+        command = {"operation": operation}
+        if value is not None:
+            command["value"] = value
+
+        params = {
+            "platform": DEFAULT_PLATFORM,
+            "zwavedeviceid": str(device.zwavedeviceid),
+            "command": json.dumps(command)
+        }
+        
+        try:
+            response = await self._async_request("post", url, params=params)
+            if response.get("resultCode") == 0:
+                if value is not None:
+                    device.status = value
+                elif operation == "close":
+                    device.status = BLIND_MIN_POSITION
+                elif operation == "open":
+                    device.status = BLIND_MAX_POSITION
+                return True
+            
+            _LOGGER.error(
+                "Failed to operate blind %s: %s", 
+                device.name, 
+                response.get("resultMessage", "Unknown error")
+            )
+            return False
+            
+        except Exception as err:
+            _LOGGER.error("Error operating blind %s: %s", device.name, str(err))
+            return False
+
     async def _async_request(self, method: str, url: str, **kwargs) -> Dict[str, Any]:
         """Make an async request to the API."""
         try:
@@ -194,6 +236,10 @@ class KeempleHome:
                         break
 
             device_type = device.get('devicetype', '')
+
+            status = device.get('status', 0)
+            if device_type == DEVICE_TYPE_BLIND:
+                status = max(BLIND_MIN_POSITION, min(BLIND_MAX_POSITION, status))   
             
             # For dual devices (type 42), create two devices
             if device_type == DEVICE_TYPE_LIGHT_DUAL:
@@ -202,7 +248,7 @@ class KeempleHome:
                         name=device_name,
                         device_id=device.get('deviceid', ''),
                         device_type=device_type,
-                        status=device.get('status', 0),
+                        status=status,
                         nuid=device.get('nuid', 0),
                         battery=device.get('battery', 0),
                         last_active_time=device.get('lastactivetime', ''),
@@ -216,7 +262,7 @@ class KeempleHome:
                     name=device_name,
                     device_id=device.get('deviceid', ''),
                     device_type=device_type,
-                    status=device.get('status', 0),
+                    status=status,
                     nuid=device.get('nuid', 0),
                     battery=device.get('battery', 0),
                     last_active_time=device.get('lastactivetime', ''),

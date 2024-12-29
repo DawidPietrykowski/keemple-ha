@@ -20,8 +20,14 @@ DEFAULT_SCAN_INTERVAL: Final = 30
 # Device Types
 DEVICE_TYPE_LIGHT: Final = "41"
 DEVICE_TYPE_LIGHT_DUAL: Final = "42"
+DEVICE_TYPE_BLIND: Final = "13"
 
 DUAL_CHANNELS: Final = [1, 2]  # Channels for dual devices
+
+# Blind Constants
+BLIND_MIN_POSITION: Final = 0
+BLIND_MAX_POSITION: Final = 99
+HA_MAX_POSITION: Final = 100    # Home Assistant's max position
 
 # Error messages
 ERROR_AUTH: Final = "invalid_auth"

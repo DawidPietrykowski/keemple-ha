@@ -7,7 +7,7 @@ from .const import DOMAIN, CONF_USERNAME, CONF_PASSWORD, CONF_COUNTRY_CODE
 from .coordinator import KeempleDataUpdateCoordinator
 from .api import KeempleHome
 
-PLATFORMS: list[Platform] = [Platform.LIGHT]
+PLATFORMS: list[Platform] = [Platform.LIGHT, Platform.COVER]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Keemple from a config entry."""
