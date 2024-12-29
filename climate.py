@@ -139,7 +139,7 @@ class KeempleClimate(ClimateEntity):
                 if self.device.statuses:
                     self.device.statuses[TEMP_TARGET_IDX] = temperature
                 self.async_write_ha_state()
-                await self.coordinator.trigger_delayed_refresh()
+                # await self.coordinator.trigger_delayed_refresh()
             else:
                 _LOGGER.error("Failed to set temperature for %s", self.name)
 
@@ -155,7 +155,7 @@ class KeempleClimate(ClimateEntity):
             if self.device.statuses:
                 self.device.statuses[POWER_STATE_IDX] = 1 if power else 0
             self.async_write_ha_state()
-            await self.coordinator.trigger_delayed_refresh()
+            # await self.coordinator.trigger_delayed_refresh()
         else:
             _LOGGER.error("Failed to set mode for %s", self.name)
 

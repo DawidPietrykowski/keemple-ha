@@ -88,11 +88,11 @@ class KeempleCover(CoverEntity):
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the cover."""
-        await self.async_set_cover_position({"position": HA_MAX_POSITION})
+        await self.async_set_cover_position(position=HA_MAX_POSITION)
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Close the cover."""
-        await self.async_set_cover_position({"position": BLIND_MIN_POSITION})
+        await self.async_set_cover_position(position=BLIND_MIN_POSITION)
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Stop the cover."""
@@ -112,6 +112,6 @@ class KeempleCover(CoverEntity):
             if success:
                 self.device.status = keemple_position
                 self.async_write_ha_state()
-                await self.coordinator.trigger_delayed_refresh()
+                # await self.coordinator.trigger_delayed_refresh()
             else:
                 _LOGGER.error("Failed to set position for %s", self.name)
