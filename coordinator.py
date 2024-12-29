@@ -1,11 +1,12 @@
 """DataUpdateCoordinator for Keemple."""
 from datetime import timedelta
 import logging
+import asyncio
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN, DEFAULT_SCAN_INTERVAL
+from .const import DOMAIN, DEFAULT_SCAN_INTERVAL, DEFAULT_REFRESH_DELAY
 from .api import KeempleHome
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,6 +24,12 @@ class KeempleDataUpdateCoordinator(DataUpdateCoordinator):
             name=DOMAIN,
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
         )
+
+    async def trigger_delayed_refresh(self):
+        if DEFAULT_REFRESH_DELAY == 0:
+            return
+        await asyncio.sleep(DEFAULT_REFRESH_DELAY)
+        self.async_request_refresh()
 
     async def _async_update_data(self):
         """Update data via library."""

@@ -97,7 +97,7 @@ class KeempleCover(CoverEntity):
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Stop the cover."""
         await self.coordinator.api.operate_blind(self.device, "stop")
-        await self.coordinator.async_request_refresh()
+        await self.coordinator.trigger_delayed_refresh()
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         """Move the cover to a specific position."""
@@ -112,6 +112,6 @@ class KeempleCover(CoverEntity):
             if success:
                 self.device.status = keemple_position
                 self.async_write_ha_state()
-                await self.coordinator.async_request_refresh()
+                await self.coordinator.trigger_delayed_refresh()
             else:
                 _LOGGER.error("Failed to set position for %s", self.name)

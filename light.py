@@ -60,7 +60,7 @@ class KeempleLight(LightEntity):
         if success:
             self.device.set_channel_status(255)
             self.async_write_ha_state()
-            await self.coordinator.async_request_refresh()
+            await self.coordinator.trigger_delayed_refresh()
         else:
             _LOGGER.error("Failed to turn on %s", self.name)
 
@@ -70,7 +70,7 @@ class KeempleLight(LightEntity):
         if success:
             self.device.set_channel_status(0)
             self.async_write_ha_state()
-            await self.coordinator.async_request_refresh()
+            await self.coordinator.trigger_delayed_refresh()
         else:
             _LOGGER.error("Failed to turn off %s", self.name)
 
