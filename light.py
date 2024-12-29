@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
 
-from .const import DOMAIN, DEVICE_TYPE_LIGHT
+from .const import DOMAIN, DEVICE_TYPE_LIGHT, DEVICE_TYPE_LIGHT_DUAL
 from .coordinator import KeempleDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -21,7 +21,10 @@ async def async_setup_entry(
     coordinator: KeempleDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
     
     lights = []
+    # Add both single and dual light types
     for device in coordinator.api.get_devices_by_type(DEVICE_TYPE_LIGHT):
+        lights.append(KeempleLight(coordinator, device))
+    for device in coordinator.api.get_devices_by_type(DEVICE_TYPE_LIGHT_DUAL):
         lights.append(KeempleLight(coordinator, device))
     
     async_add_entities(lights)
@@ -34,7 +37,7 @@ class KeempleLight(LightEntity):
         self.coordinator = coordinator
         self.device = device
         self._attr_unique_id = device.unique_id
-        self._attr_name = device.name
+        self._attr_name = device.display_name
         self._attr_device_info = device.device_info
 
     @property

@@ -10,7 +10,9 @@ from .const import (
     CONF_USERNAME,
     CONF_PASSWORD,
     BASE_URL,
-    DEFAULT_PLATFORM
+    DEFAULT_PLATFORM,
+    DEVICE_TYPE_LIGHT_DUAL,
+    DUAL_CHANNELS
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,11 +29,21 @@ class Device:
     last_active_time: str
     zwavedeviceid: int
     statuses: Optional[str] = None
+    channel: Optional[int] = None  # Add channel support
     
     @property
     def unique_id(self) -> str:
         """Return unique ID for Home Assistant."""
-        return f"{DOMAIN}_{self.device_type}_{self.nuid}"
+        base_id = f"{DOMAIN}_{self.device_type}_{self.nuid}"
+        if self.channel is not None:
+            return f"{base_id}_channel_{self.channel}"
+        return base_id
+    @property
+    def display_name(self) -> str:
+        """Return display name including channel if applicable."""
+        if self.channel is not None:
+            return f"{self.name} Channel {self.channel}"
+        return self.name
     
     @property
     def device_info(self) -> Dict[str, Any]:
@@ -128,23 +140,33 @@ class KeempleHome:
         if not self._authenticated:
             await self.async_login()
 
+        url = f"{BASE_URL}/device/operate"
+        
         params = {
             "platform": DEFAULT_PLATFORM,
             "zwavedeviceid": str(device.zwavedeviceid),
             "command": json.dumps({"operation": operation})
         }
         
+        # Add channel parameter for dual devices
+        if device.channel is not None:
+            params["channel"] = str(device.channel)
+        
         try:
-            response = await self._async_request(
-                "post",
-                f"{BASE_URL}/device/operate",
-                params=params
-            )
+            response = await self._async_request("post", url, params=params)
+            if response.get("resultCode") == 0:
+                device.status = 1 if operation == "open" else 0
+                return True
             
-            return response.get("resultCode") == 0
+            _LOGGER.error(
+                "Failed to operate device %s: %s", 
+                device.display_name, 
+                response.get("resultMessage", "Unknown error")
+            )
+            return False
             
         except Exception as err:
-            _LOGGER.error("Operation error for device %s: %s", device.name, str(err))
+            _LOGGER.error("Error operating device %s: %s", device.display_name, str(err))
             return False
 
     async def _async_request(self, method: str, url: str, **kwargs) -> Dict[str, Any]:
@@ -171,17 +193,36 @@ class KeempleHome:
                         device_name = appliance.get('name', "Unknown")
                         break
 
-            self.devices.append(Device(
-                name=device_name,
-                device_id=device.get('deviceid', ''),
-                device_type=device.get('devicetype', ''),
-                status=device.get('status', 0),
-                nuid=device.get('nuid', 0),
-                battery=device.get('battery', 0),
-                last_active_time=device.get('lastactivetime', ''),
-                zwavedeviceid=device.get('zwavedeviceid', 0),
-                statuses=device.get('statuses')
-            ))
+            device_type = device.get('devicetype', '')
+            
+            # For dual devices (type 42), create two devices
+            if device_type == DEVICE_TYPE_LIGHT_DUAL:
+                for channel in DUAL_CHANNELS:
+                    self.devices.append(Device(
+                        name=device_name,
+                        device_id=device.get('deviceid', ''),
+                        device_type=device_type,
+                        status=device.get('status', 0),
+                        nuid=device.get('nuid', 0),
+                        battery=device.get('battery', 0),
+                        last_active_time=device.get('lastactivetime', ''),
+                        zwavedeviceid=device.get('zwavedeviceid', 0),
+                        statuses=device.get('statuses'),
+                        channel=channel
+                    ))
+            else:
+                # Single devices
+                self.devices.append(Device(
+                    name=device_name,
+                    device_id=device.get('deviceid', ''),
+                    device_type=device_type,
+                    status=device.get('status', 0),
+                    nuid=device.get('nuid', 0),
+                    battery=device.get('battery', 0),
+                    last_active_time=device.get('lastactivetime', ''),
+                    zwavedeviceid=device.get('zwavedeviceid', 0),
+                    statuses=device.get('statuses')
+                ))
 
     def _organize_rooms(self) -> None:
         """Organize devices by room."""

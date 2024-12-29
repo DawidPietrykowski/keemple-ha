@@ -19,7 +19,9 @@ DEFAULT_SCAN_INTERVAL: Final = 30
 
 # Device Types
 DEVICE_TYPE_LIGHT: Final = "41"
-DEVICE_TYPE_SWITCH: Final = "42"
+DEVICE_TYPE_LIGHT_DUAL: Final = "42"
+
+DUAL_CHANNELS: Final = [1, 2]  # Channels for dual devices
 
 # Error messages
 ERROR_AUTH: Final = "invalid_auth"
