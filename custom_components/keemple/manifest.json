@@ -1,0 +1,12 @@
+{
+  "domain": "keemple",
+  "name": "Keemple Home",
+  "codeowners": ["@DawidPietrykowski"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/DawidPietrykowski/keemple-ha",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/DawidPietrykowski/keemple-ha/issues",
+  "requirements": ["requests"],
+  "version": "1.0.0"
+}
