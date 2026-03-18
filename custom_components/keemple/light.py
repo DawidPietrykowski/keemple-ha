@@ -2,7 +2,7 @@
 import logging
 from typing import Any
 
-from homeassistant.components.light import LightEntity
+from homeassistant.components.light import LightEntity, ColorMode
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.config_entries import ConfigEntry
@@ -31,6 +31,9 @@ async def async_setup_entry(
 
 class KeempleLight(LightEntity):
     """Representation of a Keemple Light."""
+
+    _attr_supported_color_modes = {ColorMode.ONOFF}
+    _attr_color_mode = ColorMode.ONOFF
 
     def __init__(self, coordinator: KeempleDataUpdateCoordinator, device):
         """Initialize the light."""
